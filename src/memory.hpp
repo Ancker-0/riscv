@@ -8,13 +8,17 @@ class Mem : public std::unordered_map<reg_t, byte> {
   using faT = std::unordered_map<reg_t, byte>;
 public:
   struct {
-    Proxy<bool> rst;
+    Proxy<reg_t> get1;
   } I;
   struct {
+    Proxy<word> res1;
   } O;
 
   byte &operator[](const reg_t &p) {
     return faT::operator[](p);
+  }
+
+  void Run() {
   }
 };
 

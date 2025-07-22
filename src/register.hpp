@@ -19,12 +19,14 @@ public:
 
 class Reg {
   reg_t reg[32];
-
-public:
   reg_t &operator[](const RegIdx &k) {
     if (k.p == 0)
       return reg[0] = 0;
     return reg[k.p];
+  }
+
+public:
+  void Run() {
   }
 };
 

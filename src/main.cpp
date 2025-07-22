@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  RV::Init(Load(filename));
+  RV::Run(std::move(Load(filename)));
 
   std::cout << "Hello world!" << std::endl;
   return 0;

@@ -7,32 +7,30 @@
 #include <vector>
 #include <memory>
 
+/*
 class CPU {
-  Mem &mem;
-  reg_t pc;
-
   struct copy_pipe {
-    virtual void copy();
+    virtual void copy() = 0;
+    virtual ~copy_pipe() = default;
   };
+
   template<typename T>
   struct copy_pipe_impl : public copy_pipe {
     T *dest, *src;
+    copy_pipe_impl(T *dest_, T *src_) : dest(dest_), src(src_) {}
     void copy() override { *dest = *src; }
   };
+
   std::vector<std::unique_ptr<copy_pipe>> conn;
 
 public:
 
   template <typename T>
   void Connect(T &dest, T &src) {  // chronic connect
-    conn.push_back({&dest, &src});
+    conn.push_back(std::make_unique<copy_pipe_impl<T>>(&dest, &src));
   }
 
   // It remains a technical problem to logically connect the stuffs.
-
-  // explicit CPU(Mem *mem_) : mem(*mem_) {
-  //   pc = 0x00;
-  // }
 
   void Step() {
     // byte identifier = mem[pc];
@@ -47,5 +45,6 @@ public:
       p->copy();
   }
 };
+*/
 
 #endif
