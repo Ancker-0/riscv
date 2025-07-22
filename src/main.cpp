@@ -3,6 +3,7 @@
 #include "cpu.hpp"
 #include "memory.hpp"
 #include "riscv.hpp"
+#include "instruction.hpp"
 
 #include <format>
 #include <iostream>

@@ -5,22 +5,27 @@
 #include "memory.hpp"
 #include "log.hpp"
 #include <vector>
+#include <memory>
 
 class CPU {
-  // Mem &mem;
+  Mem &mem;
   reg_t pc;
 
-  struct connection {
-    size_t sz;
-    void *dest, *src;
+  struct copy_pipe {
+    virtual void copy();
   };
-  std::vector<connection> conn;
+  template<typename T>
+  struct copy_pipe_impl : public copy_pipe {
+    T *dest, *src;
+    void copy() override { *dest = *src; }
+  };
+  std::vector<std::unique_ptr<copy_pipe>> conn;
 
 public:
 
   template <typename T>
   void Connect(T &dest, T &src) {  // chronic connect
-    conn.push_back({sizeof(T), (void*)&dest, (void*)&src});
+    conn.push_back({&dest, &src});
   }
 
   // It remains a technical problem to logically connect the stuffs.
@@ -36,8 +41,10 @@ public:
     //   pc += 2;
     //   return;
     // }
-
     // word cmd = mem[pc] | ((word)mem[pc + 1] << 8) | ((word)mem[pc + 2] << 16) | ((word)mem[pc + 3] << 24);
+
+    for (auto &p : conn)
+      p->copy();
   }
 };
 

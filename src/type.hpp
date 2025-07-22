@@ -27,8 +27,8 @@ public:
   Proxy(const T &v) : val(v) {}
   // void Set(const T &v) { val = v; trigger(); }
   T Set(const T &v) { val = v; trigger(); }
-  T &operator=(const T &v) { val = v; return *this; }
-  T &operator=(const Proxy &v) { val = v.val; return *this; }
+  Proxy &operator=(const T &v) { val = v; return *this; }
+  Proxy &operator=(const Proxy &v) { val = v.val; return *this; }
   void Register(thunk th) { ths.push_back(th); }
   operator T() {
     return val;

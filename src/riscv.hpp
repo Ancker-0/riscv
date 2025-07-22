@@ -6,11 +6,13 @@
 #include "register.hpp"
 
 namespace RV {
-  CPU cpu;
+  CPU *cpu;
   Mem mem;
   Reg reg;
 
   void Init(const Mem &mem_) {
+    mem = mem_;
+    // cpu->Connect();
   }
 }
 

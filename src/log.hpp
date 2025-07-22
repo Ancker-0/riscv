@@ -11,6 +11,9 @@ struct Logger {
   void Info(std::string s) {
     std::cout << "[INFO] " << s << std::endl;
   }
+  void Debug(std::string s) {
+    std::cout << "[DEBUG] " << s << std::endl;
+  }
 } log;
 
 #endif
