@@ -5,6 +5,7 @@
 #include "instruction.hpp"
 #include "log.hpp"
 #include "register.hpp"
+#include "memory.hpp"
 
 #include <cassert>
 #include <format>
@@ -184,19 +185,19 @@ namespace RV_toy {
         if ((opcode & 0x3) != 0x3)
           log.Error(std::format("Bad opcode {} with cmd {}", opcode, cmd));
         assert((opcode & 0x3) == 0x3);
-        RV32_Instruction *ins;
+        std::unique_ptr<RV32_Instruction> ins;
         if (opcode == 0b0110111 || opcode == 0b0010111)
-          ins = new RV32_U;
+          ins = std::unique_ptr<RV32_Instruction>(new RV32_U);
         else if (opcode == 0b1101111)
-          ins = new RV32_J;
+          ins = std::unique_ptr<RV32_Instruction>(new RV32_J);
         else if (opcode == 0b1100111 or opcode == 0b0000011 or opcode == 0b0010011)
-          ins = new RV32_I;
+          ins = std::unique_ptr<RV32_Instruction>(new RV32_I);
         else if (opcode == 0b1100011)
-          ins = new RV32_B;
+          ins = std::unique_ptr<RV32_Instruction>(new RV32_B);
         else if (opcode == 0b0100011)
-          ins = new RV32_S;
+          ins = std::unique_ptr<RV32_Instruction>(new RV32_S);
         else if (opcode == 0b0110011)
-          ins = new RV32_R;
+          ins = std::unique_ptr<RV32_Instruction>(new RV32_R);
         else {
           log.Error(std::format("Unparseable opcode {}", opcode));
           return;

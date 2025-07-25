@@ -84,7 +84,7 @@ struct RV32_B : public RV32_Instruction {
     fn3 = cmd >> 12 & Mask(3);
     // imm = (cmd >> 7 & Mask(1, 4)) | (cmd << 4 & 1 << 11) | (cmd >> 20 & Mask(5, 10)) | (cmd >> 19 & 1 << 12);
     imm = ((cmd >> 31) & 0x1) << 12 | ((cmd >> 7) & 0x1E) | ((cmd >> 25) & 0x3F) << 5 | ((cmd >> 7) & 0x1) << 11;
-    imm = SignFrom(imm, 12);
+    // imm = SignFrom(imm, 12);
 
 
     rd = RegIdx(cmd >> 7 & Mask(5));
