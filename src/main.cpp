@@ -6,6 +6,7 @@
 #include "instruction.hpp"
 #include "toy.hpp"
 
+#include <cstring>
 #include <format>
 #include <iostream>
 #include <memory>
@@ -50,7 +51,8 @@ int main(int argc, char *argv[]) {
   if (argc == 1) {
     fnptr = std::unique_ptr<char[]>(new char[1024]);
     filename = fnptr.get();
-    scanf("%s", filename);
+    // scanf("%s", filename);
+    strcpy(filename, "/dev/stdin");
   } else if (argc == 2) {
     filename = argv[1];
   } else {
