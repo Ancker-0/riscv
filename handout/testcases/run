@@ -1,0 +1,6 @@
+#!/bin/bash
+
+gcc $1.c -o $1
+./$1
+echo $?
+../../src/main $1.data 2>/dev/null
