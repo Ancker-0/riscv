@@ -1,0 +1,86 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: $0 <filename (no .c)>       Generate <filename>.data and <filename>.dump from <filename>.c"
+  echo "       $0 -c                       Clean temporary files"
+  echo "       $0 -h | --help              Show this help message"
+}
+
+gen() {
+  riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles $1.c -o $1.o -c -lgcc -O0
+  riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles start.S -o start.o -c
+  riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles start.o $1.o -o $1.elf -T link.ld -lgcc
+  riscv64-unknown-elf-objdump -d $1.elf > $1.dump
+  riscv64-unknown-elf-objcopy -O verilog $1.elf $1.data
+  gcc $1.c -o $1
+
+  ../src/main $1.data
+  ./$1
+  echo $?
+}
+
+clean-gen() {
+  rm -f *.o *.elf start.S link.ld
+}
+
+init() {
+  cat > link.ld <<EOF
+SECTIONS {
+  . = 0x00000000;
+
+  .text : { *(.text*) }
+  .data : { *(.data*) }
+  .bss  : { *(.bss*) }
+}
+
+MEMORY {
+  text (rx)  : ORIGIN = 0x00000000, LENGTH = 4096M
+  data (rw)  : ORIGIN = 0x80000000, LENGTH = 4096M
+}
+EOF
+
+  cat > start.S <<EOF
+.section .text
+.global _start
+_start:
+    call main
+    li   a0, 255
+1:  j 1b
+EOF
+
+cat > io.inc <<EOF
+int judgeResult = 0;
+const int Mod = 253;
+
+void printInt(int x) {
+  judgeResult ^= x;
+  judgeResult += 173;
+}
+
+void printStr(const char *str) {
+  for (const char *cur = str; *cur != 0; ++cur) {
+    judgeResult ^= *cur;
+    judgeResult += 521;
+  }
+}
+EOF
+
+}
+
+if [ $# -eq 0 ]; then
+  usage
+  exit 1
+fi
+
+case "$1" in
+  -c)
+    clean-gen
+    ;;
+  -h|--help)
+    usage
+    ;;
+  *)
+    init
+    gen "$1"
+    ;;
+esac
