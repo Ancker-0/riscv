@@ -12,20 +12,20 @@ class RegIdx {
   friend Reg;
 
 public:
-  explicit RegIdx(const word &p_) : p(p_) {
+  explicit RegIdx(const word &p_ = 0) : p(p_) {
     assert(p_ < 32);
   }
 };
 
 class Reg {
   reg_t reg[32];
+public:
   reg_t &operator[](const RegIdx &k) {
     if (k.p == 0)
       return reg[0] = 0;
     return reg[k.p];
   }
 
-public:
   void Run() {
   }
 };

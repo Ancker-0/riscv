@@ -6,13 +6,16 @@
 
 struct Logger {
   void Warn(std::string s) {
-    std::cout << "[WARN] " << s << std::endl;
+    std::cerr << "[WARN] " << s << std::endl;
   }
   void Info(std::string s) {
-    std::cout << "[INFO] " << s << std::endl;
+    std::cerr << "[INFO] " << s << std::endl;
   }
   void Debug(std::string s) {
-    std::cout << "[DEBUG] " << s << std::endl;
+    std::cerr << "[DEBUG] " << s << std::endl;
+  }
+  void Error(std::string s) {
+    std::cout << "[ERROR] " << s << std::endl;
   }
 } log;
 

@@ -41,6 +41,8 @@ namespace RV {
     Connect(dec.I.res1, mem->O.res1);
     Connect(eop, dec.O.eop);
 
+    dec.I.rst = true;
+
     while (not eop) {
       mem->Run();
       reg.Run();

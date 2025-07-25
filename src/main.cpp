@@ -4,6 +4,7 @@
 #include "memory.hpp"
 #include "riscv.hpp"
 #include "instruction.hpp"
+#include "toy.hpp"
 
 #include <format>
 #include <iostream>
@@ -31,9 +32,11 @@ Mem Load(char *filename) {
       for (int i = 0; i < 8; ++i)
         pos = (pos << 4) | map[getc(f)];
 #endif
-      log.Info(std::format("Jump to {}", pos));
+      log.Info(std::format("Jump to {:X}", pos));
+      where = pos;
     } else if (('0' <= ch and ch <= '9') or ('A' <= ch and ch <= 'F')) {
       int nxt = getc(f);
+      // log.Debug(std::format("Reading {:X} as {:#X}", where, map[ch] << 4 | map[nxt]));
       res[where++] = map[ch] << 4 | map[nxt];
     }
   }
@@ -41,6 +44,7 @@ Mem Load(char *filename) {
 }
 
 int main(int argc, char *argv[]) {
+  // printf("%d %d\n", (sreg_t)(sbyte)0xFF, (sreg_t)(byte)0xFF);
   char *filename;
   std::unique_ptr<char[]> fnptr;
   if (argc == 1) {
@@ -54,8 +58,8 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  RV::Run(std::move(Load(filename)));
+  RV_toy::Run(std::move(Load(filename)));
 
-  std::cout << "Hello world!" << std::endl;
+  std::cerr << "Hello world!" << std::endl;
   return 0;
 }

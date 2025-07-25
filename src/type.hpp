@@ -8,6 +8,7 @@
 #include <functional>
 
 typedef uint8_t byte;
+typedef int8_t sbyte;
 typedef uint32_t uint32;
 typedef uint32_t word;
 
@@ -35,10 +36,20 @@ public:
   void Register(thunk th) { ths.push_back(th); }
 };
 
+template <typename T>
+struct Proto {
+  bool valid = false;
+  bool ready = true;
+  T data;
+};
+template <typename T> using PProto = Proto<Proxy<T>>;
+
 #if RISCV_ENABLE64
-typedef uint32_t reg_t;
-#else
 typedef uint64_t reg_t;
+typedef int64_t sreg_t;
+#else
+typedef uint32_t reg_t;
+typedef int32_t sreg_t;
 #endif
 
 #endif
