@@ -24,7 +24,7 @@ struct Visitor {
 struct RV32_Instruction {
   virtual void Parse(word cmd) = 0;
   virtual void Exec(Visitor &v) = 0;
-  // virtual ~RV32_Instruction() = default;
+  virtual ~RV32_Instruction() = default;
 };
 
 static constexpr inline word Mask(byte x) { return (1 << x) - 1; }
@@ -41,6 +41,7 @@ struct RV32_U : public RV32_Instruction {
     rd = RegIdx(cmd >> 7 & Mask(5));
   }
   void Exec(Visitor &v) override { v.Visit(this); }
+  ~RV32_U() override = default;
 };
 
 struct RV32_J : public RV32_Instruction {
@@ -56,6 +57,7 @@ struct RV32_J : public RV32_Instruction {
     rd = RegIdx(cmd >> 7 & Mask(5));
   }
   void Exec(Visitor &v) override { v.Visit(this); }
+  ~RV32_J() override = default;
 };
 
 struct RV32_I : public RV32_Instruction {
@@ -73,6 +75,7 @@ struct RV32_I : public RV32_Instruction {
     imm = SignFrom(imm, 11);
   }
   void Exec(Visitor &v) override { v.Visit(this); }
+  ~RV32_I() override = default;
 };
 
 struct RV32_B : public RV32_Instruction {
@@ -95,6 +98,7 @@ struct RV32_B : public RV32_Instruction {
     imm = SignFrom(imm, 12);
   }
   void Exec(Visitor &v) override { v.Visit(this); }
+  ~RV32_B() override = default;
 };
 
 struct RV32_S : public RV32_Instruction {
@@ -113,6 +117,7 @@ struct RV32_S : public RV32_Instruction {
     imm = SignFrom(imm, 11);
   }
   void Exec(Visitor &v) override { v.Visit(this); }
+  ~RV32_S() override = default;
 };
 
 struct RV32_R : public RV32_Instruction {
@@ -127,6 +132,7 @@ struct RV32_R : public RV32_Instruction {
     rs2 = RegIdx(cmd >> 20 & Mask(5));
   }
   void Exec(Visitor &v) override { v.Visit(this); }
+  ~RV32_R() override = default;
 };
 
 #endif
