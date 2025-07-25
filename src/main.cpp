@@ -13,14 +13,13 @@
 #include <cstdio>
 // #include <bits/stdc++.h>
 
-Mem Load(char *filename) {
+Mem Load(FILE *f) {
   static byte map[128];
   for (int i = 0; i < 10; ++i)
     map['0' + i] = (byte)i;
   for (int i = 0; i < 6; ++i)
     map['A' + i] = (byte)(10 + i);
 
-  FILE *f = fopen(filename, "r");
   reg_t where = 0;
   Mem res;
   int ch;
@@ -48,19 +47,22 @@ int main(int argc, char *argv[]) {
   // printf("%d %d\n", (sreg_t)(sbyte)0xFF, (sreg_t)(byte)0xFF);
   char *filename;
   std::unique_ptr<char[]> fnptr;
+  FILE *input;
   if (argc == 1) {
-    fnptr = std::unique_ptr<char[]>(new char[1024]);
-    filename = fnptr.get();
+    // fnptr = std::unique_ptr<char[]>(new char[1024]);
+    // filename = fnptr.get();
     // scanf("%s", filename);
-    strcpy(filename, "/dev/stdin");
+    // strcpy(filename, "/dev/stdin");
+    input = stdin;
   } else if (argc == 2) {
     filename = argv[1];
+    input = fopen(filename, "r");
   } else {
     fprintf(stderr, "Unexpected argc!\n");
     return EXIT_FAILURE;
   }
 
-  RV_toy::Run(std::move(Load(filename)));
+  RV_toy::Run(std::move(Load(input)));
 
   std::cerr << "Hello world!" << std::endl;
   return 0;
