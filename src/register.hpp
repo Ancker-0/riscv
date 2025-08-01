@@ -3,15 +3,19 @@
 
 #include "config.hpp"
 #include "type.hpp"
+
+#include <array>
 #include <cassert>
 
 class Reg;
+class RF;
 
 class RegIdx {
-  word p;
   friend Reg;
+  friend RF;
 
 public:
+  word p;
   explicit RegIdx(const word &p_ = 0) : p(p_) {
     assert(p_ < 32);
   }
@@ -27,6 +31,23 @@ public:
   }
 
   void Run() {
+  }
+};
+
+class RF {
+public:
+  struct RFc {
+    reg_t val;
+    bool busy;
+    int dependRoB;
+  };
+  typedef std::array<Proxy<RFc>, 32> RFcs;
+  RFcs pre, now;
+  void Upd(RegIdx x, int robId) {
+    now[x.p].set(RFc{ (reg_t)-1, true, robId });
+  }
+  void UpdVal(RegIdx x, reg_t val) {
+    now[x.p].set(RFc{ val, false, -1 });
   }
 };
 

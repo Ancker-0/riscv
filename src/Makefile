@@ -5,7 +5,9 @@ sanitize:
 	g++ main.cpp -o main -std=c++20 -fsanitize=address,undefined
 
 run:
-	# ./main ../handout/sample/sample.data
-	./main ../handout/testcases/array_test2.data
+	./main ../asm/lui.data
+	# ./main ../handout/testcases/array_test2.data
 
-.PHONY: all run
+test: all run
+
+.PHONY: all run sanitize test

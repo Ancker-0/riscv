@@ -3,6 +3,10 @@
 
 #include "register.hpp"
 #include "type.hpp"
+#include "log.hpp"
+
+#include <memory>
+#include <format>
 
 struct RV32_Instruction;
 struct RV32_U;
@@ -11,6 +15,7 @@ struct RV32_I;
 struct RV32_B;
 struct RV32_S;
 struct RV32_R;
+struct RV32_ECALL;
 
 struct Visitor {
   virtual void Visit(RV32_U *s) = 0;
@@ -19,6 +24,7 @@ struct Visitor {
   virtual void Visit(RV32_B *s) = 0;
   virtual void Visit(RV32_S *s) = 0;
   virtual void Visit(RV32_R *s) = 0;
+  virtual void Visit(RV32_ECALL *s) {};
 };
 
 struct RV32_Instruction {
@@ -134,5 +140,43 @@ struct RV32_R : public RV32_Instruction {
   void Exec(Visitor &v) override { v.Visit(this); }
   ~RV32_R() override = default;
 };
+
+struct RV32_ECALL : public RV32_Instruction {
+  int type;
+  void Parse(word cmd) override {
+    if (cmd == 0x73)
+      type = 0;
+    else if (cmd == 0x100073)
+      type = 1;
+    else
+      type = -1;
+  }
+  void Exec(Visitor &v) override { v.Visit(this); }
+  ~RV32_ECALL() override = default;
+};
+
+std::unique_ptr<RV32_Instruction> dispatch(word cmd) {
+  std::unique_ptr<RV32_Instruction> ins;
+  byte opcode = cmd & Mask(7);
+  if (opcode == 0b0110111 || opcode == 0b0010111)
+    ins = std::unique_ptr<RV32_Instruction>(new RV32_U);
+  else if (opcode == 0b1101111)
+    ins = std::unique_ptr<RV32_Instruction>(new RV32_J);
+  else if (opcode == 0b1100111 or opcode == 0b0000011 or opcode == 0b0010011)
+    ins = std::unique_ptr<RV32_Instruction>(new RV32_I);
+  else if (opcode == 0b1100011)
+    ins = std::unique_ptr<RV32_Instruction>(new RV32_B);
+  else if (opcode == 0b0100011)
+    ins = std::unique_ptr<RV32_Instruction>(new RV32_S);
+  else if (opcode == 0b0110011)
+    ins = std::unique_ptr<RV32_Instruction>(new RV32_R);
+  else if (cmd == 0x73 or cmd == 0x100073)
+    ins = std::unique_ptr<RV32_Instruction>(new RV32_ECALL);
+  else {
+    log.Error(std::format("Unparseable opcode {} cmd {:X}", opcode, cmd));
+    return nullptr;
+  }
+  return ins;
+}
 
 #endif

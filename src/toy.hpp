@@ -172,12 +172,15 @@ namespace RV_toy {
     void operator()(Mem &&mem_) {
       mem = std::make_unique<Mem>(mem_);
       PC = 0;
+      int counter = 0;
 
       while (true) {
         word cmd = (*mem)[PC] | (*mem)[PC + 1] << 8 | (*mem)[PC + 2] << 16 | (*mem)[PC + 3] << 24;
+        ++counter;
         // printf("PC = %X, cmd = %X\n", PC, cmd);
         if (cmd == 0x0ff00513) {
           log.Info("Returning");
+          log.Info(std::format("Run for {} cycles", counter));
           printf("%d\n", (int)regs[RegIdx(10)] & 0xFF);
           break;
         }
@@ -205,6 +208,17 @@ namespace RV_toy {
         NPC = PC + 4;
         ins->Parse(cmd);
         ins->Exec(*this);
+
+        if (counter <= 50) {
+          printf("(counter %d) ", counter);
+          printf("(PC %X) ", PC);
+          printf("(next-PC %X) ", NPC);
+          for (int i = 0; i < 32; ++i)
+            if (regs[RegIdx(i)])
+              printf("(x%d %d) ", i, regs[RegIdx(i)]);
+          puts("");
+        }
+
         PC = NPC;
       }
     }

@@ -20,6 +20,16 @@ public:
     return faT::operator[](p);
   }
 
+  void Run(CPU *cpu) {
+  }
+};
+
+class IFetcher {
+public:
+  struct {
+  } I;
+  struct {
+  } O;
   void Run() {
   }
 };
