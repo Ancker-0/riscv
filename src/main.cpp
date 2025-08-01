@@ -53,7 +53,8 @@ int main(int argc, char *argv[]) {
     // filename = fnptr.get();
     // scanf("%s", filename);
     // strcpy(filename, "/dev/stdin");
-    input = stdin;
+    // input = stdin;
+    input = fopen("../asm/simple.data", "r");
   } else if (argc == 2) {
     filename = argv[1];
     input = fopen(filename, "r");
