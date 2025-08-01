@@ -1,0 +1,10 @@
+#!/bin/bash
+
+compile () {
+	riscv64-unknown-elf-as -march=rv32i -mabi=ilp32 $1.S -o $1.o
+	riscv64-unknown-elf-ld -Ttext=0x0 $1.o -o $1.elf -nostdlib -melf32lriscv
+	riscv64-unknown-elf-objcopy -O verilog $1.elf $1.data
+	riscv64-unknown-elf-objdump -D $1.elf > $1.dump
+}
+
+compile $@
