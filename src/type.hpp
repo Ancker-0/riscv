@@ -72,7 +72,7 @@ public:
   int hd = 0, tl = 0;
   RQueue &operator=(const RQueue &o) { memcpy(q, o.q, sizeof(T) * N); hd = o.hd; tl = o.tl; return *this; }
   // byte push(const T &x) { q[tl] = x; byte ret = tl; tl = nxt(tl); return ret; }
-  const T &front() { return q[hd]; }
+  T &front() { return q[hd]; }
   void pop() { hd = nxt(hd); }
   bool empty() { return tl == hd; }
   bool full() { return nxt(tl) == hd; }

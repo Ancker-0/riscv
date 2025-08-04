@@ -19,7 +19,7 @@ struct RS {
   struct RS_shot {
     bool busy;
     int opcode, fn3, fn7;
-    int robid;
+    int robid;  // can also be lsbid
     word result;
     word Vj, Vk;
     byte Qj, Qk;

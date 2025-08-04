@@ -82,28 +82,7 @@ public:
     conn.push_back(std::make_unique<copy_primitive<int>>(&dest, &src));
   }
 
-  CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *lsb_) : mem(mem_), dec(dec_), rs(rs_), rf(rf_), rob(rob_), alu(alu_), lsb(lsb_) {
-    finish = false;
-    PC = 0;
-    clk = 0;
-    for (int i = 0; i < RS_size; ++i)
-      Connect(rs->qold[i], rs->q[i]);
-
-    Connect(rob->qold.tl, rob->q.tl);
-    Connect(rob->qold.hd, rob->q.hd);
-    for (int i = 0; i < RoB_size; ++i)
-      Connect(rob->qold.q[i], rob->q.q[i]);
-
-    for (int i = 0; i < 32; ++i)
-      Connect(rf->pre[i], rf->now[i]);
-    for (int i = 0; i < ALU_size; ++i)
-      Connect(alu->as[i].pre, alu->as[i].now);
-
-    Connect(lsb->s.pre, lsb->s.now);
-
-    static int always_zero = 0;
-    Connect(rs->lsb_used, always_zero);
-  }
+  CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *lsb_);
 
   // It remains a technical problem to logically connect the stuffs.
 
@@ -147,6 +126,34 @@ public:
   virtual void Visit(RV32_ECALL *s) override;
 };
 
+
+CPU::CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *lsb_) : mem(mem_), dec(dec_), rs(rs_),
+  rf(rf_), rob(rob_), alu(alu_), lsb(lsb_) {
+  finish = false;
+  PC = 0;
+  clk = 0;
+  for (int i = 0; i < RS_size; ++i)
+    Connect(rs->qold[i], rs->q[i]);
+
+  Connect(rob->qold.tl, rob->q.tl);
+  Connect(rob->qold.hd, rob->q.hd);
+  for (int i = 0; i < RoB_size; ++i)
+    Connect(rob->qold.q[i], rob->q.q[i]);
+
+  for (int i = 0; i < 32; ++i)
+    Connect(rf->pre[i], rf->now[i]);
+  for (int i = 0; i < ALU_size; ++i)
+    Connect(alu->as[i].pre, alu->as[i].now);
+
+  Connect(lsb->qold.tl, lsb->q.tl);
+  Connect(lsb->qold.hd, lsb->q.hd);
+  for (int i = 0; i < LSB::LSB_size; ++i)
+    Connect(lsb->qold.q[i], lsb->q.q[i]);
+
+  static int always_zero = 0;
+  Connect(rs->lsb_used, always_zero);
+}
+
 inline void CPU::UpdRoB(int robid, reg_t val) {
   auto &q = rob->q.q[robid];
   q.get().val = val;
@@ -171,10 +178,9 @@ inline void CPU::UpdRoB(int robid, reg_t val) {
 }
 
 inline void CPU::RunLSB() {
-  if (auto &now = lsb->s.pre.get(); now.busy and --lsb->counter <= 0) {
-    log.Debug(std::format("Yay! We're having rob {}", now.robid));
-    lsb->s.now.get().busy = false;
-    lsb->s.now.set();
+  if (not lsb->qold.empty() and lsb->qold.front().get().state == LSB::Ready) {
+    auto &now = lsb->q.front().get();
+    now = lsb->qold.front().get();
     reg_t val = 0;
     if (now.store_length == 0) {
       if (now.sign)
@@ -190,8 +196,7 @@ inline void CPU::RunLSB() {
       val = (*mem)[now.addr] | (reg_t) (*mem)[now.addr + 1] << 8 | (reg_t) (*mem)[now.addr + 2] << 16 | (reg_t) (*mem)[now.addr + 3] << 24;
     } else
       log.Error("Unexpected error: ooL2o");
-    rs->q[now.rsid].get().state = RS::rsdone;
-    rs->q[now.rsid].set();
+    lsb->q.front().set();
     UpdRoB(now.robid, val);
   }
 }
@@ -235,22 +240,24 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
     log.Debug(std::format("Issuing ALU::ADD {:x} {:x} by alu {}", now.Vj, now.Vk, aluid));
     unit.set(ALU::Unit{ true, rsid, ALU::ADD, now.Vj, now.Vk });
     now.state = RS::rsexecuting;
+    now.busy = false;
     rs->q[rsid].set(now);
   } else if (now.opcode == load_series_opc) {
-    if (lsb->s.pre.get().busy or rs->lsb_used) {
-      log.Debug(std::format("Pity for {} {}", lsb->s.pre.get().busy, rs->lsb_used));
-      return;
-    }
-    rs->lsb_used = 1;
-    int len = now.fn3 & 0b011;
-    bool sign = !(now.fn3 & 0b100);
-    if (len == -1)
-      log.Error("Unexpected error: Eisi6");
-    log.Debug(std::format("Having fun at rob {}", now.robid));
-    lsb->s.now.set(LSB::Data{ LSB::Store, true, now.robid, rsid, now.Vj + now.Vk, (byte)len, sign});
+    int lsbid = now.robid;
+    lsb->q.q[lsbid].get().addr = now.Vj + now.Vk;
+    lsb->q.q[lsbid].get().state = LSB::Ready;
+    lsb->q.q[lsbid].set();
     lsb->counter = LSB::LSB_DELAY;
     now.state = RS::rsexecuting;
+    now.busy = false;
     rs->q[rsid].set(now);
+  } else if (now.opcode == load_series_opc) {
+    int lsbid = now.robid;
+    reg_t addr = now.Vj + now.Vk;
+    now.busy = false;
+    lsb->q.q[lsbid].get().addr = addr;
+    lsb->q.q[lsbid].get().state = LSB::Ready;
+    lsb->q.q[lsbid].set();
   } else
     log.Error("Sorry, not implemented!");
 }
@@ -371,6 +378,11 @@ inline void CPU::Visit(RV32_I *s) {
     // NPC = (regs[s->rs1] + s->imm) & ~1;
     // regs[s->rd] = tmp;
   } else if (s->opcode == 0b0000011) {
+    if (lsb->qold.full()) {
+      NPC = PC;
+      return;
+    }
+    int lsbid = lsb->q.tl++;
     s->Sign();
     int robid = rob->q.tl++;
     rob->q.q[robid].set(RoB::RoBc{
@@ -384,7 +396,7 @@ inline void CPU::Visit(RV32_I *s) {
     rs->q[validRS].set(RS::RS_shot{
       true,
       s->opcode, s->fn3, -1,
-      robid, 0,
+      lsbid, 0,
       0, s->imm,
       RS::INVALID_ID, RS::FREEID,
       0,
@@ -399,6 +411,16 @@ inline void CPU::Visit(RV32_I *s) {
       rs->q[validRS].get().Qj = RS::FREEID;
       rs->q[validRS].get().Vj = rfc.val;
     }
+    int len = s->fn3 & 0b011;
+    bool sign = !(s->fn3 & 0b100);
+    lsb->q.q[lsbid].set(LSB::Data{
+      LSB::Load,
+      true,
+      robid,
+      (reg_t)-1,
+      (byte)len, sign,
+      LSB::Prepare
+    });
     rf->Upd(s->rd, robid);
   } else if (s->opcode == 0b0010011) {
 //     if (s->fn3 == 0b000)
