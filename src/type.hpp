@@ -66,8 +66,9 @@ typedef int32_t sreg_t;
 template <class T, int N_>
 class RQueue {
   static constexpr int N = N_ + 1;
-  static int nxt(int x) { return (x + 1) % N; }
 public:
+  static int nxt(int x) { return (x + 1) % N; }
+  static int inc(int &x) { return x = nxt(x); }
   T q[N];
   int hd = 0, tl = 0;
   RQueue &operator=(const RQueue &o) { memcpy(q, o.q, sizeof(T) * N); hd = o.hd; tl = o.tl; return *this; }

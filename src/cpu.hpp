@@ -12,13 +12,13 @@
 #include "instruction.hpp"
 #include <vector>
 #include <memory>
-#include <oneapi/tbb/version.h>
 
 class CPU : public Visitor {
   const byte lui_opc   = 0b0110111;
   const byte auipc_opc = 0b0010111;
   const byte load_series_opc = 0b0000011;
   const byte store_series_opc = 0b0100011;
+  const byte arithmetic_series_opc = 0b0010011;
   const byte jal_opc   = 0b1101111;
   const byte jalr_opc  = 0b1100111;
 
@@ -120,11 +120,16 @@ public:
   }
 
   virtual void Visit(RV32_U *s) override;
+
+  void FillRSj(int rsid, RegIdx r);
+
+  void FillRSk(int rsid, RegIdx r);
+
   virtual void Visit(RV32_J *s) override {};
   virtual void Visit(RV32_I *s) override;
   virtual void Visit(RV32_B *s) override {};
   virtual void Visit(RV32_S *s) override;
-  virtual void Visit(RV32_R *s) override {};
+  virtual void Visit(RV32_R *s) override;
   virtual void Visit(RV32_ECALL *s) override;
 };
 
@@ -202,15 +207,18 @@ inline void CPU::RunLSB() {
         log.Error("Unexpected error: ooL2o");
       // lsb->q.front().set();
       UpdRoB(now.robid, val);
-      lsb->q.hd++;
+      // lsb->q.hd++;
+      lsb->q.inc(lsb->q.hd);
     } else if (now.type == LSB::Store) {
       rob->q.q[now.robid].get().state = RoB::robfinish;
       rob->q.q[now.robid].set();
       now.state = LSB::Executing;
       lsb->q.front().set();
     }
-  } else if (not lsb->qold.empty() and lsb->qold.front().get().state == LSB::Done)
-    lsb->q.hd++;
+  } else if (not lsb->qold.empty() and lsb->qold.front().get().state == LSB::Done) {
+    // lsb->q.hd++;
+    lsb->q.inc(lsb->q.hd);
+  }
 }
 
 // TODO: Let ALU directly know robid
@@ -272,6 +280,19 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
     lsb->q.q[lsbid].get().store_value = now.Vk;
     lsb->q.q[lsbid].get().state = LSB::Ready;
     lsb->q.q[lsbid].set();
+  } else if (now.opcode == arithmetic_series_opc) {
+    int aluid = alu->validId(start);
+    if (aluid == -1)
+      return;
+    start = aluid + 1;
+    auto &unit = alu->as[aluid].now;
+    unit.get().busy = true;
+    unit.set();
+    if (now.fn3 == 0b000) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::ADD, now.Vj, now.Vk });
+      now.busy = false;
+    } else
+      log.Error("Sorry, not implemented! ieVo8");
   } else
     log.Error("Sorry, not implemented!");
 }
@@ -310,7 +331,8 @@ void CPU::RunRoB() {
   int robid = rob->qold.hd;
   log.Debug(std::format("Commiting PC {:X} robid {}", now.PC, robid));
   if (now.type == RoB::robreg) {
-    rob->q.hd++;
+    // rob->q.hd++;
+    rob->q.inc(rob->q.hd);
     if (auto rfi = rf->pre[now.dest.p].get(); rfi.dependRoB == robid and rfi.busy == true) {
       rf->UpdVal(now.dest, now.val);
     } else {
@@ -321,7 +343,8 @@ void CPU::RunRoB() {
     auto &ls = lsb->qold.q[lsbid].get();
     if (ls.state != LSB::Executing)
       return;
-    rob->q.hd++;
+    // rob->q.hd++;
+    rob->q.inc(rob->q.hd);
     log.Debug(std::format("Commit store lsbid {}", lsbid));
     (*mem)[ls.addr] = ls.store_value;
     if (ls.store_length >= 1)
@@ -362,7 +385,7 @@ void CPU::Visit(RV32_U *s) {
   }
   if (s->opcode == lui_opc) {
     // (*reg)[s->rd] = s->imm;
-    int robid = rob->q.tl++;
+    int robid = rob->q.tl; rob->q.inc(rob->q.tl);
     rob->q.q[robid].set(RoB::RoBc{
       RoB::robreg,
       s->rd,
@@ -374,7 +397,7 @@ void CPU::Visit(RV32_U *s) {
     rf->Upd(s->rd, robid);
   } else if (s->opcode == auipc_opc) {
     // (*reg)[s->rd] = PC + s->imm;
-    int robid = rob->q.tl++;
+    int robid = rob->q.tl; rob->q.inc(rob->q.tl);
     rob->q.q[robid].set(RoB::RoBc{
       RoB::robreg,
       s->rd,
@@ -397,6 +420,26 @@ void CPU::Visit(RV32_U *s) {
     log.Error(std::format("Unrecognized U code {}", s->opcode));
 }
 
+void CPU::FillRSj(int rsid, RegIdx r) {
+  if (rf->pre[r.p].get().busy)
+    rs->q[rsid].get().Qj = rf->pre[r.p].get().dependRoB;
+  else {
+    rs->q[rsid].get().Qj = RS::FREEID;
+    rs->q[rsid].get().Vj = rf->pre[r.p].get().val;
+  }
+  rs->q[rsid].set();
+}
+
+void CPU::FillRSk(int rsid, RegIdx r) {
+  if (rf->pre[r.p].get().busy)
+    rs->qold[rsid].get().Qk = rf->pre[r.p].get().dependRoB;
+  else {
+    rs->qold[rsid].get().Qk = RS::FREEID;
+    rs->qold[rsid].get().Vk = rf->pre[r.p].get().val;
+  }
+  rs->qold[rsid].set();
+}
+
 inline void CPU::Visit(RV32_I *s) {
   if (rob->q.full()) {
     NPC = PC;
@@ -412,9 +455,9 @@ inline void CPU::Visit(RV32_I *s) {
       NPC = PC;
       return;
     }
-    int lsbid = lsb->q.tl++;
+    int lsbid = lsb->q.tl; lsb->q.inc(lsb->q.tl);
     s->Sign();
-    int robid = rob->q.tl++;
+    int robid = rob->q.tl; rob->q.inc(rob->q.tl);
     rob->q.q[robid].set(RoB::RoBc{
       RoB::robreg,
       s->rd,
@@ -454,6 +497,25 @@ inline void CPU::Visit(RV32_I *s) {
     });
     rf->Upd(s->rd, robid);
   } else if (s->opcode == 0b0010011) {
+    int robid = rob->q.tl; rob->q.inc(rob->q.tl);
+    rob->q.q[robid].set(RoB::RoBc{
+      RoB::robreg,
+      s->rd, (reg_t)-1,
+      (byte)-1,
+      (word)-1, PC,
+      RoB::robexecuting
+    });
+    rs->q[validRS].set(RS::RS_shot{
+      true, s->opcode, s->fn3, -1,
+      robid, (word)-1,
+      (word)-1, s->imm,
+      RS::INVALID_ID, RS::FREEID,
+      (reg_t)-1,
+      RS::rsprepare
+    });
+    FillRSj(validRS, s->rs1);
+    rf->Upd(s->rd, robid);
+
 //     if (s->fn3 == 0b000)
 //       s->Sign(), regs[s->rd] = regs[s->rs1] + s->imm;
 //     else if (s->fn3 == 0b101 and (s->imm >> 6) == 0b000000) {
@@ -492,9 +554,9 @@ inline void CPU::Visit(RV32_S *s) {
       NPC = PC;
       return;
     }
-    int lsbid = lsb->q.tl++;
+    int lsbid = lsb->q.tl; lsb->q.inc(lsb->q.tl);
     s->Sign();
-    int robid = rob->q.tl++;
+    int robid = rob->q.tl; rob->q.inc(rob->q.tl);
     int len = s->fn3;
     assert(s->fn3 <= 2);
     rob->q.q[robid].set(RoB::RoBc{
@@ -536,6 +598,9 @@ inline void CPU::Visit(RV32_S *s) {
     });
   } else
     assert(false);
+}
+
+inline void CPU::Visit(RV32_R *s) {
 }
 
 void CPU::Visit(RV32_ECALL *s) {
