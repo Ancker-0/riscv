@@ -11,7 +11,7 @@ struct ALU {
   };
   struct Unit {
     bool busy;
-    int rsid;
+    int robid;
     Type type;
     word a, b;
   };

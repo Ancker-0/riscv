@@ -21,6 +21,7 @@ public:
     Prepare,
     Ready,
     Executing,
+    Done,
   };
 
   struct Data {
@@ -31,6 +32,7 @@ public:
     byte store_length;  // 0 for byte, 1 for half word, 2 for word
     bool sign;
     State state;
+    reg_t store_value;  // for store only
   };
   RQueue<Proxy<Data>, LSB_size> qold, q;
 };

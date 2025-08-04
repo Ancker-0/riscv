@@ -12,11 +12,13 @@
 #include "instruction.hpp"
 #include <vector>
 #include <memory>
+#include <oneapi/tbb/version.h>
 
 class CPU : public Visitor {
   const byte lui_opc   = 0b0110111;
   const byte auipc_opc = 0b0010111;
   const byte load_series_opc = 0b0000011;
+  const byte store_series_opc = 0b0100011;
   const byte jal_opc   = 0b1101111;
   const byte jalr_opc  = 0b1100111;
 
@@ -121,7 +123,7 @@ public:
   virtual void Visit(RV32_J *s) override {};
   virtual void Visit(RV32_I *s) override;
   virtual void Visit(RV32_B *s) override {};
-  virtual void Visit(RV32_S *s) override {};
+  virtual void Visit(RV32_S *s) override;
   virtual void Visit(RV32_R *s) override {};
   virtual void Visit(RV32_ECALL *s) override;
 };
@@ -156,6 +158,7 @@ CPU::CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *
 
 inline void CPU::UpdRoB(int robid, reg_t val) {
   auto &q = rob->q.q[robid];
+  assert(q.get().type == RoB::robreg);
   q.get().val = val;
   q.get().state = RoB::robfinish;
   q.set();
@@ -181,38 +184,47 @@ inline void CPU::RunLSB() {
   if (not lsb->qold.empty() and lsb->qold.front().get().state == LSB::Ready) {
     auto &now = lsb->q.front().get();
     now = lsb->qold.front().get();
-    reg_t val = 0;
-    if (now.store_length == 0) {
-      if (now.sign)
-        val = (sbyte) (*mem)[now.addr];
-      else
-        val = (*mem)[now.addr];
-    } else if (now.store_length == 1) {
-      if (now.sign)
-        val = (*mem)[now.addr] | (sreg_t)(sbyte)(*mem)[now.addr + 1] << 8;
-      else
-        val = (*mem)[now.addr] | (reg_t)(*mem)[now.addr + 1] << 8;
-    } else if (now.store_length == 2) {
-      val = (*mem)[now.addr] | (reg_t) (*mem)[now.addr + 1] << 8 | (reg_t) (*mem)[now.addr + 2] << 16 | (reg_t) (*mem)[now.addr + 3] << 24;
-    } else
-      log.Error("Unexpected error: ooL2o");
-    lsb->q.front().set();
-    UpdRoB(now.robid, val);
-  }
+    if (now.type == LSB::Load) {
+      reg_t val = 0;
+      if (now.store_length == 0) {
+        if (now.sign)
+          val = (sbyte) (*mem)[now.addr];
+        else
+          val = (*mem)[now.addr];
+      } else if (now.store_length == 1) {
+        if (now.sign)
+          val = (*mem)[now.addr] | (sreg_t)(sbyte)(*mem)[now.addr + 1] << 8;
+        else
+          val = (*mem)[now.addr] | (reg_t)(*mem)[now.addr + 1] << 8;
+      } else if (now.store_length == 2) {
+        val = (*mem)[now.addr] | (reg_t) (*mem)[now.addr + 1] << 8 | (reg_t) (*mem)[now.addr + 2] << 16 | (reg_t) (*mem)[now.addr + 3] << 24;
+      } else
+        log.Error("Unexpected error: ooL2o");
+      // lsb->q.front().set();
+      UpdRoB(now.robid, val);
+      lsb->q.hd++;
+    } else if (now.type == LSB::Store) {
+      rob->q.q[now.robid].get().state = RoB::robfinish;
+      rob->q.q[now.robid].set();
+      now.state = LSB::Executing;
+      lsb->q.front().set();
+    }
+  } else if (not lsb->qold.empty() and lsb->qold.front().get().state == LSB::Done)
+    lsb->q.hd++;
 }
 
 // TODO: Let ALU directly know robid
 inline void CPU::ALUExec(const ALU::Unit &now) {
   if (now.type == ALU::ADD) {
-    int result = now.a + now.b;
-    rs->q[now.rsid].get().state = RS::rsdone;
-    rs->q[now.rsid].set();
+    reg_t result = now.a + now.b;
+    // rs->q[now.rsid].get().state = RS::rsdone;
+    // rs->q[now.rsid].set();
     // int robid = rs->qold[now.rsid].get().robid;
     // rob->q.q[robid].get().val = result;
     // rob->q.q[robid].get().state = RoB::robfinish;
     // rob->q.q[robid].set();
-    UpdRoB(rs->qold[now.rsid].get().robid, result);
-    log.Debug(std::format("ALU ADD: {:x} + {:x} = {:x}", now.a, now.b, result));
+    UpdRoB(now.robid, result);
+    log.Debug(std::format("ALU ADD: {:x} + {:x} = {:x} updating rob {}", now.a, now.b, result, now.robid));
   } else
     log.Debug(std::format("ALU: unrecognized type {}", (int)now.type));
 }
@@ -237,13 +249,14 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
     auto &unit = alu->as[aluid].now;
     unit.get().busy = true;
     unit.set();
-    log.Debug(std::format("Issuing ALU::ADD {:x} {:x} by alu {}", now.Vj, now.Vk, aluid));
-    unit.set(ALU::Unit{ true, rsid, ALU::ADD, now.Vj, now.Vk });
+    log.Debug(std::format("Issuing ALU::ADD {:x} {:x} by alu {} updating rob {} (aka {})", now.Vj, now.Vk, aluid, now.robid, rs->qold[rsid].get().robid));
+    unit.set(ALU::Unit{ true, now.robid, ALU::ADD, now.Vj, now.Vk });
     now.state = RS::rsexecuting;
     now.busy = false;
     rs->q[rsid].set(now);
   } else if (now.opcode == load_series_opc) {
     int lsbid = now.robid;
+    log.Debug(std::format("RS ready for load {}", lsbid));
     lsb->q.q[lsbid].get().addr = now.Vj + now.Vk;
     lsb->q.q[lsbid].get().state = LSB::Ready;
     lsb->q.q[lsbid].set();
@@ -251,11 +264,12 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
     now.state = RS::rsexecuting;
     now.busy = false;
     rs->q[rsid].set(now);
-  } else if (now.opcode == load_series_opc) {
+  } else if (now.opcode == store_series_opc) {
     int lsbid = now.robid;
-    reg_t addr = now.Vj + now.Vk;
+    reg_t addr = now.Vj + now.A;
     now.busy = false;
     lsb->q.q[lsbid].get().addr = addr;
+    lsb->q.q[lsbid].get().store_value = now.Vk;
     lsb->q.q[lsbid].get().state = LSB::Ready;
     lsb->q.q[lsbid].set();
   } else
@@ -295,13 +309,29 @@ void CPU::RunRoB() {
     return;
   int robid = rob->qold.hd;
   log.Debug(std::format("Commiting PC {:X} robid {}", now.PC, robid));
-  rob->q.hd++;
   if (now.type == RoB::robreg) {
+    rob->q.hd++;
     if (auto rfi = rf->pre[now.dest.p].get(); rfi.dependRoB == robid and rfi.busy == true) {
       rf->UpdVal(now.dest, now.val);
     } else {
       printf("%d %d %d\n", rfi.dependRoB, robid, rfi.busy);
     }
+  } else if (now.type == RoB::robmem) {
+    int lsbid = now.val;
+    auto &ls = lsb->qold.q[lsbid].get();
+    if (ls.state != LSB::Executing)
+      return;
+    rob->q.hd++;
+    log.Debug(std::format("Commit store lsbid {}", lsbid));
+    (*mem)[ls.addr] = ls.store_value;
+    if (ls.store_length >= 1)
+      (*mem)[ls.addr + 1] = ls.store_value >> 8;
+    if (ls.store_length >= 2) {
+      (*mem)[ls.addr + 2] = ls.store_value >> 16;
+      (*mem)[ls.addr + 3] = ls.store_value >> 24;
+    }
+    lsb->q.q[lsbid].get().state = LSB::Done;
+    lsb->q.q[lsbid].set();
   }
 }
 
@@ -419,7 +449,8 @@ inline void CPU::Visit(RV32_I *s) {
       robid,
       (reg_t)-1,
       (byte)len, sign,
-      LSB::Prepare
+      LSB::Prepare,
+      (reg_t)-1,
     });
     rf->Upd(s->rd, robid);
   } else if (s->opcode == 0b0010011) {
@@ -453,6 +484,58 @@ inline void CPU::Visit(RV32_I *s) {
 //       log.Error(std::format("Unrecognized I code {} fn3 {}", s->opcode, s->fn3));
   } else
     log.Error(std::format("Unrecognized I code {} fn3 {}", s->opcode, s->fn3));
+}
+
+inline void CPU::Visit(RV32_S *s) {
+  if (s->opcode == store_series_opc) {
+    if (lsb->qold.full()) {
+      NPC = PC;
+      return;
+    }
+    int lsbid = lsb->q.tl++;
+    s->Sign();
+    int robid = rob->q.tl++;
+    int len = s->fn3;
+    assert(s->fn3 <= 2);
+    rob->q.q[robid].set(RoB::RoBc{
+      RoB::robmem,
+      RegIdx(0), (reg_t)-1,
+      (byte)len, (reg_t)lsbid,
+      PC,
+      RoB::robexecuting
+    });
+    rs->q[validRS].set(RS::RS_shot{
+      true,
+      s->opcode, s->fn3, -1,
+      lsbid, 0,
+      0, 0,
+      RS::INVALID_ID, RS::INVALID_ID,
+      s->imm,
+      RS::rsprepare,
+    });
+    if (auto &rfc = rf->pre[s->rs1.p].get(); rfc.busy) {
+      rs->q[validRS].get().Qj = rf->pre[s->rs1.p].get().dependRoB;
+    } else {
+      rs->q[validRS].get().Qj = RS::FREEID;
+      rs->q[validRS].get().Vj = rfc.val;
+    }
+    if (auto &rfc = rf->pre[s->rs2.p].get(); rfc.busy) {
+      rs->q[validRS].get().Qk = rf->pre[s->rs2.p].get().dependRoB;
+    } else {
+      rs->q[validRS].get().Qk = RS::FREEID;
+      rs->q[validRS].get().Vk = rfc.val;
+    }
+    lsb->q.q[lsbid].set(LSB::Data{
+      LSB::Store,
+      true,
+      robid,
+      (reg_t)-1,
+      (byte)len, false,
+      LSB::Prepare,
+      (reg_t)-1,
+    });
+  } else
+    assert(false);
 }
 
 void CPU::Visit(RV32_ECALL *s) {
