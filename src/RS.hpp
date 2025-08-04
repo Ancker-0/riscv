@@ -42,6 +42,7 @@ struct RoB {
     robbranch,
     robmem,
     robreg,
+    robend,
   };
   enum RoBState {
     robbusy,

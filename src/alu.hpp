@@ -7,7 +7,8 @@ const int ALU_size = 8;
 
 struct ALU {
   enum Type {
-    ADD
+    ADD,
+    XOR,
   };
   struct Unit {
     bool busy;
