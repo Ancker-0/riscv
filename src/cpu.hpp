@@ -125,7 +125,7 @@ public:
 
   void FillRSk(int rsid, RegIdx r);
 
-  virtual void Visit(RV32_J *s) override {};
+  virtual void Visit(RV32_J *s) override;
   virtual void Visit(RV32_I *s) override;
   virtual void Visit(RV32_B *s) override {};
   virtual void Visit(RV32_S *s) override;
@@ -440,16 +440,46 @@ void CPU::FillRSk(int rsid, RegIdx r) {
   rs->qold[rsid].set();
 }
 
+inline void CPU::Visit(RV32_J *s) {
+  if (s->opcode == jal_opc) {
+    if (rob->qold.full()) {
+      NPC = PC;
+      return;
+    }
+    int robid = rob->q.tl; rob->q.inc(rob->q.tl);
+    rob->q.q[robid].set(RoB::RoBc{
+      RoB::robreg,
+      s->rd, (reg_t)-1,
+      (byte)-1, (word)(PC + 4),
+      PC,
+      RoB::robfinish,
+    });
+    rf->Upd(s->rd, robid);
+    NPC = PC + s->imm;
+  } else
+    log.Error("Sorry, not implemented! Eey8r");
+}
+
 inline void CPU::Visit(RV32_I *s) {
   if (rob->q.full()) {
     NPC = PC;
     return;
   }
   if (s->opcode == jalr_opc and s->fn3 == 0b000) {
-    // s->Sign();
-    // reg_t tmp = PC + 4;
-    // NPC = (regs[s->rs1] + s->imm) & ~1;
-    // regs[s->rd] = tmp;
+    if (rf->pre[s->rs1.p].get().busy or rob->qold.full()) {
+      NPC = PC;
+      return;
+    }
+    NPC = (rf->pre[s->rs1.p].get().val + s->imm) & ~1;
+    int robid = rob->q.tl;
+    rob->q.q[robid].set(RoB::RoBc{
+      RoB::robreg,
+      s->rd, (reg_t)-1,
+      (byte)-1, (word)(PC + 4),
+      PC,
+      RoB::robfinish
+    });
+    rf->Upd(s->rd, robid);
   } else if (s->opcode == 0b0000011) {
     if (lsb->qold.full()) {
       NPC = PC;
