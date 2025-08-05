@@ -1,0 +1,30 @@
+
+branch.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <__BSS_END__-0x1020>:
+   0:	01000593          	li	a1,16
+   4:	00000613          	li	a2,0
+   8:	00000073          	ecall
+   c:	00000073          	ecall
+  10:	00100073          	ebreak
+  14:	00158593          	addi	a1,a1,1
+  18:	00c58463          	beq	a1,a2,20 <__BSS_END__-0x1000>
+  1c:	fd5ff06f          	j	fffffff0 <__global_pointer$+0xffffe7d0>
+
+Disassembly of section .riscv.attributes:
+
+00000000 <.riscv.attributes>:
+   0:	1941                	.insn	2, 0x1941
+   2:	0000                	.insn	2, 0x
+   4:	7200                	.insn	2, 0x7200
+   6:	7369                	.insn	2, 0x7369
+   8:	01007663          	bgeu	zero,a6,14 <__BSS_END__-0x100c>
+   c:	0000000f          	fence	unknown,unknown
+  10:	7205                	.insn	2, 0x7205
+  12:	3376                	.insn	2, 0x3376
+  14:	6932                	.insn	2, 0x6932
+  16:	7032                	.insn	2, 0x7032
+  18:	0031                	.insn	2, 0x0031

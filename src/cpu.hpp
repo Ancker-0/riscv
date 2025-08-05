@@ -10,7 +10,9 @@
 #include "register.hpp"
 #include "lsb.hpp"
 #include "instruction.hpp"
+#include "predictor.hpp"
 #include <vector>
+#include <type_traits>
 #include <memory>
 
 class CPU : public Visitor {
@@ -20,6 +22,7 @@ class CPU : public Visitor {
   const byte store_series_opc = 0b0100011;
   const byte arithmetic_imm_series_opc = 0b0010011;
   const byte arithmetic_series_opc = 0b0110011;
+  const byte branch_series_opc = 0b1100011;
   const byte jal_opc   = 0b1101111;
   const byte jalr_opc  = 0b1100111;
 
@@ -62,6 +65,8 @@ class CPU : public Visitor {
   void RunDecoder();
   void RunLSB();
 
+  bool flush;
+
 public:
   Mem *mem;
   // Reg *reg;
@@ -71,6 +76,7 @@ public:
   RoB *rob;
   ALU *alu;
   LSB *lsb;
+  Predictor *pred;
 
   reg_t PC, NPC;
   int clk;
@@ -85,7 +91,7 @@ public:
     conn.push_back(std::make_unique<copy_primitive<int>>(&dest, &src));
   }
 
-  CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *lsb_);
+  CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *lsb_, Predictor *pred_);
 
   // It remains a technical problem to logically connect the stuffs.
 
@@ -107,7 +113,6 @@ public:
 
     NPC = PC + 4;
     log.Info(std::format("Step to {:X}", PC));
-
     RunRS();
     RunRoB();
     RunDecoder();
@@ -115,6 +120,36 @@ public:
     RunLSB();
 
     PC = NPC;
+
+    if (flush) {
+// #define RST(x) x = decltype(x)()
+//       RST(rs->q);
+//       RST(rob->q);
+//       RST(alu->as);
+//       RST(lsb->q);
+// #undef RST
+// shouldn't move the memory, otherwise Connect won't work well.
+#define RST(x) x.set(std::remove_reference<decltype(x.get())>::type())
+      for (int i = 0; i < RS_size; ++i)
+        RST(rs->q[i]);
+      rob->q.tl = rob->q.hd = 0;
+      for (int i = 0; i < RoB_size; ++i)
+        RST(rob->q.q[i]);
+      for (int i = 0; i < ALU_size; ++i)
+        RST(alu->as[i].now);
+      lsb->q.tl = lsb->q.hd = 0;
+      for (int i = 0; i < LSB::LSB_size; ++i)
+        RST(lsb->q.q[i]);
+#undef RST
+
+      for (int i = 0; i < 32; ++i) {
+        rf->now[i].get().busy = false;
+        rf->now[i].set();
+      }
+
+      flush = false;
+    }
+
 
     for (auto &p : conn)
       p->copy();
@@ -128,16 +163,17 @@ public:
 
   virtual void Visit(RV32_J *s) override;
   virtual void Visit(RV32_I *s) override;
-  virtual void Visit(RV32_B *s) override {};
+  virtual void Visit(RV32_B *s) override;
   virtual void Visit(RV32_S *s) override;
   virtual void Visit(RV32_R *s) override;
   virtual void Visit(RV32_ECALL *s) override;
 };
 
 
-CPU::CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *lsb_) : mem(mem_), dec(dec_), rs(rs_),
-  rf(rf_), rob(rob_), alu(alu_), lsb(lsb_) {
+CPU::CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *lsb_, Predictor *pred_) : mem(mem_), dec(dec_), rs(rs_),
+  rf(rf_), rob(rob_), alu(alu_), lsb(lsb_), pred(pred_) {
   finish = false;
+  flush = false;
   PC = 0;
   clk = 0;
   for (int i = 0; i < RS_size; ++i)
@@ -157,14 +193,12 @@ CPU::CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *
   Connect(lsb->qold.hd, lsb->q.hd);
   for (int i = 0; i < LSB::LSB_size; ++i)
     Connect(lsb->qold.q[i], lsb->q.q[i]);
-
-  static int always_zero = 0;
-  Connect(rs->lsb_used, always_zero);
 }
 
 inline void CPU::UpdRoB(int robid, reg_t val) {
   auto &q = rob->q.q[robid];
   assert(q.get().type == RoB::robreg);
+  log.Debug(std::format("RoBUpd: rob {} reg {} val {}", robid, rob->q.q[robid].get().dest.p, val));
   q.get().val = val;
   q.get().state = RoB::robfinish;
   q.set();
@@ -226,6 +260,7 @@ inline void CPU::RunLSB() {
 inline void CPU::ALUExec(const ALU::Unit &now) {
   if (now.type == ALU::ADD) {
     reg_t result = now.a + now.b;
+    log.Debug(std::format("ALU: {} + {}", now.a, now.b));
     UpdRoB(now.robid, result);
   } else if (now.type == ALU::XOR) {
     reg_t result = now.a ^ now.b;
@@ -285,6 +320,7 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
     auto &unit = alu->as[aluid].now;
     unit.get().busy = true;
     unit.set();
+    // printf("IMM! %d %d\n", now.Vj, now.Vk);
     if (now.fn3 == 0b000) {
       unit.set(ALU::Unit{ true, now.robid, ALU::ADD, now.Vj, now.Vk });
       now.busy = false;
@@ -309,6 +345,26 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
       now.busy = false;
     } else
       log.Error("Sorry, not implemented! Tie8D");
+  } else if (now.opcode == branch_series_opc) {
+    bool jump = false;
+    reg_t a = now.Vj, b = now.Vk;
+    if (now.fn3 == 0b000)
+      jump = a == b;
+    else if (now.fn3 == 0b001)
+      jump = a != b;
+    else if (now.fn3 == 0b100)
+      jump = (sreg_t) a < (sreg_t) b;
+    else if (now.fn3 == 0b101)
+      jump = (sreg_t) a >= (sreg_t) b;
+    else if (now.fn3 == 0b110)
+      jump = a < b;
+    else if (now.fn3 == 0b111)
+      jump = a >= b;
+    else
+        log.Error("Sorry, not implemented! Oo1ie");
+    rob->q.q[now.robid].get().state = RoB::robfinish;
+    rob->q.q[now.robid].get().memdest = jump;
+    rob->q.q[now.robid].set();
   } else
     log.Error("Sorry, not implemented!");
 }
@@ -374,6 +430,14 @@ void CPU::RunRoB() {
   } else if (now.type == RoB::robend) {
     finish = true;
     printf("%d\n", rf->now[10].get().val & 0xFF);
+  } else if (now.type == RoB::robbranch) {
+    if (now.memdest == now.dest.p) {
+      rob->q.inc(rob->q.hd);
+      return;
+    }
+    assert(now.memdest == 0 or now.memdest == 1);
+    NPC = now.PC;
+    flush = true;
   }
 }
 
@@ -398,6 +462,7 @@ void CPU::RunDecoder() {
   std::unique_ptr<RV32_Instruction> ins = dispatch(cmd);
   if (ins == nullptr) {
     log.Error(std::format("Fail to dispatch cmd {:X}", cmd));
+    NPC = PC;
     return;
   }
   ins->Parse(cmd);
@@ -496,6 +561,7 @@ inline void CPU::Visit(RV32_I *s) {
       NPC = PC;
       return;
     }
+    s->Sign();
     NPC = (rf->pre[s->rs1.p].get().val + s->imm) & ~1;
     int robid = rob->q.tl;
     rob->q.q[robid].set(RoB::RoBc{
@@ -553,6 +619,7 @@ inline void CPU::Visit(RV32_I *s) {
     });
     rf->Upd(s->rd, robid);
   } else if (s->opcode == 0b0010011) {
+    s->Sign();
     int robid = rob->q.tl; rob->q.inc(rob->q.tl);
     rob->q.q[robid].set(RoB::RoBc{
       RoB::robreg,
@@ -561,6 +628,7 @@ inline void CPU::Visit(RV32_I *s) {
       (word)-1, PC,
       RoB::robexecuting
     });
+    // log.Debug(std::format("IMM = {}", s->imm));
     rs->q[validRS].set(RS::RS_shot{
       true, s->opcode, s->fn3, -1,
       robid, (word)-1,
@@ -682,6 +750,40 @@ inline void CPU::Visit(RV32_R *s) {
     rf->Upd(s->rd, robid);
   } else
     assert(false);
+}
+
+inline void CPU::Visit(RV32_B *s) {
+  s->Sign();
+  if (s->opcode == branch_series_opc) {
+    if (rob->qold.full()) {
+      NPC = PC;
+      return;
+    }
+    int robid = rob->q.tl; rob->q.inc(rob->q.tl);
+    Predictor::Ctx ctx = { Predictor::DEFAULT, -1, -1, (int)s->imm };
+    rob->q.q[robid].set(RoB::RoBc{
+      RoB::robbranch,
+      RegIdx(0), (reg_t)-1,
+      (byte)-1, s->imm,
+      PC + s->imm,
+      RoB::robexecuting
+    });
+    if ((*pred)(ctx)) {
+      NPC = PC + s->imm;
+      rob->q.q[robid].get().dest = RegIdx(1);  // to indicate that we take the branch
+      rob->q.q[robid].get().PC = PC + 4;  // the real PC to take if we made wrong prediction
+    }
+    rs->q[validRS].set(RS::RS_shot{
+      true, s->opcode, s->fn3, -1,
+      robid,
+      (word)-1, (word)-1, (word)-1,
+      RS::INVALID_ID, RS::INVALID_ID,
+      (reg_t)-1, RS::rsprepare,
+    });
+    FillRSj(validRS, s->rs1);
+    FillRSk(validRS, s->rs2);
+  } else
+    log.Error("Sorry, not implemented! hoiW0");
 }
 
 void CPU::Visit(RV32_ECALL *s) {

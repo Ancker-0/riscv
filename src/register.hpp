@@ -44,10 +44,12 @@ public:
   typedef std::array<Proxy<RFc>, 32> RFcs;
   RFcs pre, now;
   void Upd(RegIdx x, int robId) {
-    now[x.p].set(RFc{ (reg_t)-1, true, robId });
+    if (x.p)
+      now[x.p].set(RFc{ (reg_t)-1, true, robId });
   }
   void UpdVal(RegIdx x, reg_t val) {
-    now[x.p].set(RFc{ val, false, -1 });
+    if(x.p)
+      now[x.p].set(RFc{ val, false, -1 });
   }
 };
 

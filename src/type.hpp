@@ -71,7 +71,11 @@ public:
   static int inc(int &x) { return x = nxt(x); }
   T q[N];
   int hd = 0, tl = 0;
-  RQueue &operator=(const RQueue &o) { memcpy(q, o.q, sizeof(T) * N); hd = o.hd; tl = o.tl; return *this; }
+  // RQueue &operator=(const RQueue &o) {
+  //   if (&o == this) return *this;
+  //   memcpy(q, o.q, sizeof(T) * N); hd = o.hd; tl = o.tl;
+  //   return *this;
+  // }
   // byte push(const T &x) { q[tl] = x; byte ret = tl; tl = nxt(tl); return ret; }
   T &front() { return q[hd]; }
   void pop() { hd = nxt(hd); }

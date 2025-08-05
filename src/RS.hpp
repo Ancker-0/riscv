@@ -34,7 +34,6 @@ struct RS {
     return -1;
   }
   std::array<Proxy<RS_shot>, RS_size> q, qold;
-  int lsb_used;
 };
 
 struct RoB {

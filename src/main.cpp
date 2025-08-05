@@ -49,12 +49,13 @@ int main(int argc, char *argv[]) {
   std::unique_ptr<char[]> fnptr;
   FILE *input;
   if (argc == 1) {
-    // fnptr = std::unique_ptr<char[]>(new char[1024]);
-    // filename = fnptr.get();
-    // scanf("%s", filename);
+    fnptr = std::unique_ptr<char[]>(new char[1024]);
+    filename = fnptr.get();
+    scanf("%s", filename);
+    input = fopen(filename, "r");
     // strcpy(filename, "/dev/stdin");
     // input = stdin;
-    input = fopen("../asm/simple.data", "r");
+    // input = fopen("../asm/simple.data", "r");
   } else if (argc == 2) {
     filename = argv[1];
     input = fopen(filename, "r");

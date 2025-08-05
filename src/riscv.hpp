@@ -37,9 +37,10 @@ namespace RV {
   RoB rob;
   ALU alu;
   LSB lsb;
+  NaivePredictor pred;
   void Run(Mem &&mem_) {
     mem = std::make_unique<Mem>(mem_);
-    CPU cpu(mem.get(), &dec, &rs, &rf, &rob, &alu, &lsb);
+    CPU cpu(mem.get(), &dec, &rs, &rf, &rob, &alu, &lsb, &pred);
     cpu.Run();
   }
 }
