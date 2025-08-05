@@ -14,6 +14,7 @@
 #include <vector>
 #include <type_traits>
 #include <memory>
+#include <format>
 
 class CPU : public Visitor {
   const byte lui_opc   = 0b0110111;
@@ -78,7 +79,7 @@ public:
   LSB *lsb;
   Predictor *pred;
 
-  reg_t PC, NPC;
+  reg_t PC, NPC, fNPC;
   int clk;
 
   byte validRS;
@@ -133,26 +134,39 @@ public:
       for (int i = 0; i < RS_size; ++i)
         RST(rs->q[i]);
       rob->q.tl = rob->q.hd = 0;
-      for (int i = 0; i < RoB_size; ++i)
+      for (int i = 0; i <= RoB_size; ++i)
         RST(rob->q.q[i]);
       for (int i = 0; i < ALU_size; ++i)
         RST(alu->as[i].now);
       lsb->q.tl = lsb->q.hd = 0;
-      for (int i = 0; i < LSB::LSB_size; ++i)
+      for (int i = 0; i <= LSB::LSB_size; ++i)
         RST(lsb->q.q[i]);
 #undef RST
 
+      // for (int i = 0; i < 32; ++i)
+      //   if (!rf->now[i].get().busy)
+      //     printf("%X ", (*rf).now[i].get().val);
+      //   else
+      //     printf("[%d] ", (*rf).now[i].get().dependRoB);
+      // puts("");
       for (int i = 0; i < 32; ++i) {
         rf->now[i].get().busy = false;
         rf->now[i].set();
       }
 
       flush = false;
+      PC = fNPC;
     }
 
 
     for (auto &p : conn)
       p->copy();
+    // for (int i = 0; i < 32; ++i)
+    //   if (!rf->pre[i].get().busy)
+    //     printf("%X ", (*rf).pre[i].get().val);
+    //   else
+    //     printf("[%d] ", (*rf).pre[i].get().dependRoB);
+    // puts("");
   }
 
   virtual void Visit(RV32_U *s) override;
@@ -181,7 +195,7 @@ CPU::CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *
 
   Connect(rob->qold.tl, rob->q.tl);
   Connect(rob->qold.hd, rob->q.hd);
-  for (int i = 0; i < RoB_size; ++i)
+  for (int i = 0; i <= RoB_size; ++i)
     Connect(rob->qold.q[i], rob->q.q[i]);
 
   for (int i = 0; i < 32; ++i)
@@ -191,7 +205,7 @@ CPU::CPU(Mem *mem_, Decoder *dec_, RS *rs_, RF *rf_, RoB *rob_, ALU *alu_, LSB *
 
   Connect(lsb->qold.tl, lsb->q.tl);
   Connect(lsb->qold.hd, lsb->q.hd);
-  for (int i = 0; i < LSB::LSB_size; ++i)
+  for (int i = 0; i <= LSB::LSB_size; ++i)
     Connect(lsb->qold.q[i], lsb->q.q[i]);
 }
 
@@ -265,6 +279,24 @@ inline void CPU::ALUExec(const ALU::Unit &now) {
   } else if (now.type == ALU::XOR) {
     reg_t result = now.a ^ now.b;
     UpdRoB(now.robid, result);
+  } else if (now.type == ALU::SHIFT_LEFT) {
+    reg_t result = now.a << now.b;
+    UpdRoB(now.robid, result);
+  } else if (now.type == ALU::SHIFT_RIGHT) {
+    reg_t result = now.a >> now.b;
+    UpdRoB(now.robid, result);
+  } else if (now.type == ALU::AR_SHIFT_RIGHT) {
+    reg_t result = (sreg_t)now.a >> (now.b & 63);
+    UpdRoB(now.robid, result);
+  } else if (now.type == ALU::LAND) {
+    reg_t result = now.a & now.b;
+    UpdRoB(now.robid, result);
+  } else if (now.type == ALU::LOR) {
+    reg_t result = now.a | now.b;
+    UpdRoB(now.robid, result);
+  } else if (now.type == ALU::LXOR) {
+    reg_t result = now.a ^ now.b;
+    UpdRoB(now.robid, result);
   } else
     log.Debug(std::format("ALU: unrecognized type {}", (int)now.type));
 }
@@ -283,8 +315,10 @@ inline void CPU::RunALU() {
 void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
   if (now.opcode == auipc_opc) {
     int aluid = alu->validId(start);
-    if (aluid == -1)
+    if (aluid == -1) {
+      log.Error("No valid ALU");
       return;
+    }
     start = aluid + 1;
     auto &unit = alu->as[aluid].now;
     unit.get().busy = true;
@@ -308,14 +342,17 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
     int lsbid = now.robid;
     reg_t addr = now.Vj + now.A;
     now.busy = false;
+    rs->q[rsid].set(now);
     lsb->q.q[lsbid].get().addr = addr;
     lsb->q.q[lsbid].get().store_value = now.Vk;
     lsb->q.q[lsbid].get().state = LSB::Ready;
     lsb->q.q[lsbid].set();
   } else if (now.opcode == arithmetic_imm_series_opc) {
     int aluid = alu->validId(start);
-    if (aluid == -1)
+    if (aluid == -1) {
+      log.Error("No valid ALU");
       return;
+    }
     start = aluid + 1;
     auto &unit = alu->as[aluid].now;
     unit.get().busy = true;
@@ -324,12 +361,41 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
     if (now.fn3 == 0b000) {
       unit.set(ALU::Unit{ true, now.robid, ALU::ADD, now.Vj, now.Vk });
       now.busy = false;
+      rs->q[rsid].set(now);
+    } else if (now.fn3 == 0b001) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::SHIFT_LEFT, now.Vj, now.Vk });
+      now.busy = false;
+      rs->q[rsid].set(now);
+    } else if (now.fn3 == 0b101 and (now.Vk >> 6) == 0b000000) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::SHIFT_RIGHT, now.Vj, now.Vk });
+      now.busy = false;
+      rs->q[rsid].set(now);
+    } else if (now.fn3 == 0b101 and (now.Vk >> 6) == 0b010000) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::AR_SHIFT_RIGHT, now.Vj, now.Vk });
+      now.busy = false;
+      rs->q[rsid].set(now);
+    } else if (now.fn3 == 0b111) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::LAND, now.Vj, now.Vk });
+      now.busy = false;
+      rs->q[rsid].set(now);
+    } else if (now.fn3 == 0b110) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::LOR, now.Vj, now.Vk });
+      now.busy = false;
+      rs->q[rsid].set(now);
+    } else if (now.fn3 == 0b100) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::LXOR, now.Vj, now.Vk });
+      now.busy = false;
+      rs->q[rsid].set(now);
     } else
-      log.Error("Sorry, not implemented! ieVo8");
-  } else if (now.opcode == arithmetic_series_opc) {
+      log.Error(std::format("Sorry, not implemented! ieVo8 {} {}", now.fn7, now.fn3));
+  }
+  else if (now.opcode == arithmetic_series_opc)
+  {
     int aluid = alu->validId(start);
-    if (aluid == -1)
+    if (aluid == -1) {
+      log.Error("No valid ALU");
       return;
+    }
     start = aluid + 1;
     auto &unit = alu->as[aluid].now;
     unit.get().busy = true;
@@ -340,12 +406,24 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
       else
         unit.set(ALU::Unit{ true, now.robid, ALU::ADD, now.Vj, -now.Vk });
       now.busy = false;
+      rs->q[rsid].set(now);
     } else if (now.fn3 == 0b100) {
       unit.set(ALU::Unit{ true, now.robid, ALU::XOR, now.Vj, now.Vk });
       now.busy = false;
+      rs->q[rsid].set(now);
+    } else if (now.fn3 == 0b110) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::LOR, now.Vj, now.Vk });
+      now.busy = false;
+      rs->q[rsid].set(now);
+    } else if (now.fn3 == 0b111) {
+      unit.set(ALU::Unit{ true, now.robid, ALU::LAND, now.Vj, now.Vk });
+      now.busy = false;
+      rs->q[rsid].set(now);
     } else
-      log.Error("Sorry, not implemented! Tie8D");
-  } else if (now.opcode == branch_series_opc) {
+      log.Error(std::format("Sorry, not implemented! Tie8D fn3 {}", now.fn3));
+  }
+  else if (now.opcode == branch_series_opc)
+  {
     bool jump = false;
     reg_t a = now.Vj, b = now.Vk;
     if (now.fn3 == 0b000)
@@ -365,7 +443,10 @@ void CPU::RSExec(RS::RS_shot &now, int rsid, int &start) {
     rob->q.q[now.robid].get().state = RoB::robfinish;
     rob->q.q[now.robid].get().memdest = jump;
     rob->q.q[now.robid].set();
-  } else
+    now.busy = false;
+    rs->q[rsid].set(now);
+  }
+  else
     log.Error("Sorry, not implemented!");
 }
 
@@ -398,8 +479,10 @@ void CPU::RunRoB() {
   if (rob->qold.empty())
     return;
   RoB::RoBc now = rob->qold.front().get();
-  if (now.state != RoB::robfinish)
+  if (now.state != RoB::robfinish) {
+    log.Debug(std::format("Stuck at [{}, {})", rob->qold.hd, rob->qold.tl));
     return;
+  }
   int robid = rob->qold.hd;
   log.Debug(std::format("Commiting PC {:X} robid {}", now.PC, robid));
   if (now.type == RoB::robreg) {
@@ -431,20 +514,26 @@ void CPU::RunRoB() {
     finish = true;
     printf("%d\n", rf->now[10].get().val & 0xFF);
   } else if (now.type == RoB::robbranch) {
+    rob->q.inc(rob->q.hd);
     if (now.memdest == now.dest.p) {
-      rob->q.inc(rob->q.hd);
+      log.Info(std::format("Prediction success! (goto {:X} if fail)", now.PC));
       return;
     }
+    log.Info(std::format("Prediction fail! goto {:X}", now.PC));
     assert(now.memdest == 0 or now.memdest == 1);
-    NPC = now.PC;
+    fNPC = now.PC;
     flush = true;
   }
 }
 
 void CPU::RunDecoder() {
   validRS = rs->emptyslot();
-  if (validRS == -1 or rob->q.full()) {
+  if (validRS == 0xFF or rob->q.full()) {
     NPC = PC;
+    if (validRS == 0xFF)
+      log.Error("No valid RS");
+    else
+      log.Error("RoB full");
     return;
   }
   word cmd = (*mem)[PC] | (*mem)[PC + 1] << 8 | (*mem)[PC + 2] << 16 | (*mem)[PC + 3] << 24;
@@ -563,14 +652,13 @@ inline void CPU::Visit(RV32_I *s) {
     }
     s->Sign();
     NPC = (rf->pre[s->rs1.p].get().val + s->imm) & ~1;
-    int robid = rob->q.tl;
+    int robid = rob->q.tl; rob->q.inc(rob->q.tl);
     rob->q.q[robid].set(RoB::RoBc{
-      RoB::robreg,
-      s->rd, (reg_t)-1,
-      (byte)-1, (word)(PC + 4),
-      PC,
-      RoB::robfinish
-    });
+        RoB::robreg,
+        s->rd, (reg_t)-1,
+        (byte)-1, (word)(PC + 4),
+        PC,
+        RoB::robfinish});
     rf->Upd(s->rd, robid);
   } else if (s->opcode == 0b0000011) {
     if (lsb->qold.full()) {

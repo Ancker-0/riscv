@@ -45,7 +45,7 @@ public:
   RFcs pre, now;
   void Upd(RegIdx x, int robId) {
     if (x.p)
-      now[x.p].set(RFc{ (reg_t)-1, true, robId });
+      now[x.p].set(RFc{ now[x.p].get().val, true, robId });
   }
   void UpdVal(RegIdx x, reg_t val) {
     if(x.p)

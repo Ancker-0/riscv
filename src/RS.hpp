@@ -6,7 +6,7 @@
 #include <array>
 
 constexpr int RS_size = 8;
-const int RoB_size = 16;
+const int RoB_size = 20;
 
 struct RS {
   enum RSState {

@@ -49,9 +49,10 @@ int main(int argc, char *argv[]) {
   std::unique_ptr<char[]> fnptr;
   FILE *input;
   if (argc == 1) {
-    fnptr = std::unique_ptr<char[]>(new char[1024]);
-    filename = fnptr.get();
-    scanf("%s", filename);
+    // fnptr = std::unique_ptr<char[]>(new char[1024]);
+    // filename = fnptr.get();
+    // scanf("%s", filename);
+    filename = "../asm/many.data";
     input = fopen(filename, "r");
     // strcpy(filename, "/dev/stdin");
     // input = stdin;
@@ -64,8 +65,7 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  // RV_toy::Run(std::move(Load(input)));
-  RV::Run(std::move(Load(input)));
+  RV_toy::Run(std::move(Load(input)));
   fclose(input);
 
   std::cerr << "Hello world!" << std::endl;

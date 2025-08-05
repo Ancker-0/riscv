@@ -9,6 +9,12 @@ struct ALU {
   enum Type {
     ADD,
     XOR,
+    SHIFT_LEFT,
+    SHIFT_RIGHT,
+    AR_SHIFT_RIGHT,
+    LAND,  // logical and
+    LOR,
+    LXOR,
   };
   struct Unit {
     bool busy;
