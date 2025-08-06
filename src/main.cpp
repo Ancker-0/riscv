@@ -65,7 +65,8 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  RV_toy::Run(std::move(Load(input)));
+  // RV_toy::Run(std::move(Load(input)));
+  RV::Run(std::move(Load(input)));
   fclose(input);
 
   std::cerr << "Hello world!" << std::endl;

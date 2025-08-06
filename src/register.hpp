@@ -51,6 +51,12 @@ public:
     if(x.p)
       now[x.p].set(RFc{ val, false, -1 });
   }
+  void ModifyValOnly(RegIdx x, reg_t val) {
+    if (x.p) {
+      now[x.p].get().val = val;
+      now[x.p].set();
+    }
+  }
 };
 
 #endif

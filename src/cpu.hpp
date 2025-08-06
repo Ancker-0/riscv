@@ -97,7 +97,7 @@ public:
   // It remains a technical problem to logically connect the stuffs.
 
   void Run() {
-    printf("Hello CPU\n");
+    // printf("Hello CPU\n");
     while (not finish)
       Step();
   }
@@ -113,7 +113,7 @@ public:
     // word cmd = mem[pc] | ((word)mem[pc + 1] << 8) | ((word)mem[pc + 2] << 16) | ((word)mem[pc + 3] << 24);
 
     NPC = PC + 4;
-    log.Info(std::format("Step to {:X}", PC));
+    // log.Info(std::format("Step to {:X}", PC));
     RunRS();
     RunRoB();
     RunDecoder();
@@ -283,7 +283,7 @@ inline void CPU::ALUExec(const ALU::Unit &now) {
     reg_t result = now.a << now.b;
     UpdRoB(now.robid, result);
   } else if (now.type == ALU::SHIFT_RIGHT) {
-    reg_t result = now.a >> now.b;
+    reg_t result = now.a >> (now.b & 63);
     UpdRoB(now.robid, result);
   } else if (now.type == ALU::AR_SHIFT_RIGHT) {
     reg_t result = (sreg_t)now.a >> (now.b & 63);
@@ -484,13 +484,18 @@ void CPU::RunRoB() {
     return;
   }
   int robid = rob->qold.hd;
-  log.Debug(std::format("Commiting PC {:X} robid {}", now.PC, robid));
+  // log.Debug(std::format("Commiting PC {:X} robid {}", now.PC, robid));
+  log.Debug(std::format("Commiting PC {:X}", now.PC, robid));
   if (now.type == RoB::robreg) {
     // rob->q.hd++;
     rob->q.inc(rob->q.hd);
     if (auto rfi = rf->pre[now.dest.p].get(); rfi.dependRoB == robid and rfi.busy == true) {
+      log.Debug(log.Red(std::format("Set Reg[{}] as {:X}", now.dest.p, now.val)));
       rf->UpdVal(now.dest, now.val);
     } else {
+      // Update the underlying value even when RF doesn't need it
+      // In case for branch prediction failure
+      rf->ModifyValOnly(now.dest, now.val);
       // printf("%d %d %d\n", rfi.dependRoB, robid, rfi.busy);
     }
   } else if (now.type == RoB::robmem) {
@@ -516,10 +521,10 @@ void CPU::RunRoB() {
   } else if (now.type == RoB::robbranch) {
     rob->q.inc(rob->q.hd);
     if (now.memdest == now.dest.p) {
-      log.Info(std::format("Prediction success! (goto {:X} if fail)", now.PC));
+      log.Debug(std::format("Prediction success! (goto {:X} if fail)", now.PC));
       return;
     }
-    log.Info(std::format("Prediction fail! goto {:X}", now.PC));
+    log.Debug(std::format("Prediction fail! goto {:X}", now.PC));
     assert(now.memdest == 0 or now.memdest == 1);
     fNPC = now.PC;
     flush = true;
@@ -528,7 +533,7 @@ void CPU::RunRoB() {
 
 void CPU::RunDecoder() {
   validRS = rs->emptyslot();
-  if (validRS == 0xFF or rob->q.full()) {
+  if (validRS == 0xFF or rob->qold.full()) {
     NPC = PC;
     if (validRS == 0xFF)
       log.Error("No valid RS");
@@ -559,7 +564,7 @@ void CPU::RunDecoder() {
 }
 
 void CPU::Visit(RV32_U *s) {
-  if (rob->q.full()) {
+  if (rob->qold.full()) {
     NPC = PC;
     return;
   }
@@ -641,7 +646,7 @@ inline void CPU::Visit(RV32_J *s) {
 }
 
 inline void CPU::Visit(RV32_I *s) {
-  if (rob->q.full()) {
+  if (rob->qold.full()) {
     NPC = PC;
     return;
   }
