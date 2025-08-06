@@ -52,10 +52,10 @@ int main(int argc, char *argv[]) {
     // fnptr = std::unique_ptr<char[]>(new char[1024]);
     // filename = fnptr.get();
     // scanf("%s", filename);
-    filename = "../asm/many.data";
-    input = fopen(filename, "r");
+    // filename = "../asm/many.data";
+    // input = fopen(filename, "r");
     // strcpy(filename, "/dev/stdin");
-    // input = stdin;
+    input = stdin;
     // input = fopen("../asm/simple.data", "r");
   } else if (argc == 2) {
     filename = argv[1];
